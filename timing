@@ -1,0 +1,21 @@
+import timeit
+from helpers import LinearTracker
+
+def wrapper(func, *args, **kwargs):
+    def wrapped():
+        return func(*args, **kwargs)
+    return wrapped
+
+
+def track_NN(NN_tracker_model, inp):
+    NN_tracker_model.predict(inp)
+
+def track_classic(lin_track, inp):
+    lin_track.track(inp[0, :], inp[1, :])
+
+wrapped = wrapper(track_NN, inp)
+timeit.timeit(wrapped, number=10)
+
+lin_track = LinearTracker(1, 1, 20.13)
+wrapped = wrapper(track_classic, crds_in)
+timeit.timeit(wrapped, number=10)
