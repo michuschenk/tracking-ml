@@ -19,7 +19,7 @@ data_dict = {'x_in': inp[0,:], 'xp_in': inp[1,:],
 df = pd.DataFrame(data_dict)
 
 # (2) PREPARE DATA FOR TRAINING
-# TODO: data normalization?
+# TODO: data normalization necessary?
 train_X = df.drop(columns=['x_out', 'xp_out'])
 train_y = df.drop(columns=['x_in', 'xp_in'])
 
