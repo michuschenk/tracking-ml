@@ -6,7 +6,6 @@ import pandas as pd
 from cpymad.madx import Madx
 import pysixtracklib as pyst
 
-
 # Prepare MAD-X
 mad = Madx()
 mad.options.echo = False
@@ -15,11 +14,11 @@ mad.use(sequence='sps')
 twiss = mad.twiss()
 q1mad = twiss.summary['q1']
 q2mad = twiss.summary['q2']
-print('q1mad', q1mad)
-print('q2mad', q2mad)
+# print('q1mad', q1mad)
+# print('q2mad', q2mad)
 
 # Particle tracking
-n_particles = 10000
+n_particles = 40000
 n_turns = 1
 
 # Build elements for SixTrackLib
