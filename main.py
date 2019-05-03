@@ -61,7 +61,7 @@ for l in range(n_middle_layers):
 
 # Output layer
 n_output_nodes = train_y.shape[1]  # 2 output nodes for 1D betatron
-NN_tracker_model.add(Dense(n_output_nodes, activation='relu'))
+NN_tracker_model.add(Dense(n_output_nodes, activation='linear'))
 
 # (4) COMPILE MODEL
 # Choose optimiser and loss function
