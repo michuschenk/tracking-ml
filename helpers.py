@@ -14,8 +14,10 @@ class PySixTrackLibTracker:
         mad.call(file="SPS_Q20_thin.seq")
         mad.use(sequence='sps')
         twiss = mad.twiss()
-        # q1mad = twiss.summary['q1']
-        # q2mad = twiss.summary['q2']
+        q1mad = twiss.summary['q1']
+        q2mad = twiss.summary['q2']
+        print('q1mad', q1mad)
+        print('q2mad', q2mad)
 
         # Build elements for SixTrackLib
         self.elements = pyst.Elements.from_mad(mad.sequence.sps)
@@ -32,8 +34,10 @@ class PySixTrackLibTracker:
         particles = pyst.Particles.from_ref(num_particles=n_particles, p0c=26e9)
 
         # TODO: Change possible initial particle distributions
-        px = np.random.uniform(-1e-5, 1e-5, n_particles)
-        x = np.random.uniform(-1e-5, 1e-5, n_particles)
+        # x = np.random.uniform(-1e-6, 1e-6, n_particles)
+        # px = np.random.uniform(-1e-8, 1e-8, n_particles)
+        x = 3e-6 * np.random.randn(n_particles)
+        px = 1e-7 * np.random.randn(n_particles)
         particles.x[:] = x[:]
         particles.px[:] = px[:]
 
@@ -51,9 +55,15 @@ class PySixTrackLibTracker:
 
         # Process output, bring into 'correct' form and save to file
         pdata = job.output.particles[0]
-        idx_srt_out = np.argsort(pdata.particle_id)
-        pdata_df['x_out'] = pdata.x.take(idx_srt_out)
-        pdata_df['xp_out'] = pdata.px.take(idx_srt_out)
+        msk_last_turn = (pdata.at_turn == (n_turns - 1))
+        pdata_x = pdata.x[msk_last_turn]
+        pdata_px = pdata.px[msk_last_turn]
+        pdata_pid = pdata.particle_id[msk_last_turn]
+
+        idx_srt_out = np.argsort(pdata_pid)
+        pdata_df['x_out'] = pdata_x.take(idx_srt_out)
+        pdata_df['xp_out'] = pdata_px.take(idx_srt_out)
+
         pdata_df = pd.DataFrame(data=pdata_df)
         # TODO: save data to h5 file -- allow for possibilty to load from
         #       file or regenerate data
