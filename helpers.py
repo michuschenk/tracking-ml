@@ -31,7 +31,8 @@ class PySixTrackLibTracker:
             until_turn_turn_by_turn=n_turns, until_turn=0, skip_turns=0)
 
         # Produce particle set
-        particles = pyst.Particles.from_ref(num_particles=n_particles, p0c=26e9)
+        particles = pyst.Particles.from_ref(
+            num_particles=n_particles, p0c=26e9)
 
         # TODO: Change possible initial particle distributions
         # x = np.random.uniform(-1e-6, 1e-6, n_particles)
@@ -43,7 +44,7 @@ class PySixTrackLibTracker:
 
         # Dataframe for input and output data
         idx_srt_in = particles.particle_id
-        pdata_df = {
+        df = {
             'x_in': particles.x.take(idx_srt_in),
             'xp_in': particles.px.take(idx_srt_in)}
 
@@ -61,16 +62,27 @@ class PySixTrackLibTracker:
         pdata_pid = pdata.particle_id[msk_last_turn]
 
         idx_srt_out = np.argsort(pdata_pid)
-        pdata_df['x_out'] = pdata_x.take(idx_srt_out)
-        pdata_df['xp_out'] = pdata_px.take(idx_srt_out)
+        df['x_out'] = pdata_x.take(idx_srt_out)
+        df['xp_out'] = pdata_px.take(idx_srt_out)
 
-        pdata_df = pd.DataFrame(data=pdata_df)
-        # TODO: save data to h5 file -- allow for possibilty to load from
+        # Compute centroid
+        centroid = np.zeros((n_turns, 2))
+        for i in range(n_turns):
+            msk_turn = (pdata.at_turn == i)
+            pdata_x = pdata.x[msk_turn]
+            pdata_px = pdata.px[msk_turn]
+            pdata_pid = pdata.particle_id[msk_turn]
+            idx_srt_out = np.argsort(pdata_pid)
+            centroid[i, 0] = np.mean(pdata_x.take(idx_srt_out))
+            centroid[i, 1] = np.mean(pdata_px.take(idx_srt_out))
+
+        df = pd.DataFrame(data=df)
+        # TODO: save data to h5 file -- allow for possibility to load from
         #       file or regenerate data
         # hdf_file = pd.HDFStore('sixtrack_training_set.h5')
         # hdf_file['tracking_data'] = pdata_df
 
-        return pdata_df
+        return df, centroid
 
 
 class LinearTracker:
