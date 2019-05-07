@@ -8,7 +8,7 @@ class PySixTrackLibTracker:
     """ Using fixed SPS sequence for now ... """
 
     def __init__(self):
-        # Prepare MAD-X
+        # Prepare MAD-X, load SPS sequence (just an example)
         mad = Madx()
         mad.options.echo = False
         mad.call(file="SPS_Q20_thin.seq")
@@ -22,67 +22,55 @@ class PySixTrackLibTracker:
         # Build elements for SixTrackLib
         self.elements = pyst.Elements.from_mad(mad.sequence.sps)
 
-    def create_dataset(self, n_particles=40000, n_turns=1):
+    def create_dataset(self, n_particles=100000, n_turns=1):
         # Add a beam monitor to elements
-        # (given kwargs values will produce only turn by turn data for all
-        # particles)
+        # (given kwargs values will produce only turn by turn data for
+        # all particles)
         pyst.append_beam_monitors_to_lattice(
             self.elements.cbuffer, until_turn_elem_by_elem=0,
             until_turn_turn_by_turn=n_turns, until_turn=0, skip_turns=0)
 
-        # Produce particle set
+        # Initialise particle distribution
+        # TODO: Change possible initial particle distributions
         particles = pyst.Particles.from_ref(
             num_particles=n_particles, p0c=26e9)
-
-        # TODO: Change possible initial particle distributions
-        # x = np.random.uniform(-1e-6, 1e-6, n_particles)
-        # px = np.random.uniform(-1e-8, 1e-8, n_particles)
-        x = 3e-6 * np.random.randn(n_particles)
-        px = 1e-7 * np.random.randn(n_particles)
-        particles.x[:] = x[:]
-        particles.px[:] = px[:]
-
-        # Dataframe for input and output data
-        idx_srt_in = particles.particle_id
-        df = {
-            'x_in': particles.x.take(idx_srt_in),
-            'xp_in': particles.px.take(idx_srt_in)}
+        particles.x[:] = 1e-5 * np.random.randn(n_particles)
+        particles.px[:] = 1e-6 * np.random.randn(n_particles)
+        particles.y[:] = 1e-5 * np.random.randn(n_particles)
+        particles.py[:] = 1e-6 * np.random.randn(n_particles)
+        df_init = pd.DataFrame(
+            data={
+                'x': particles.x,
+                'xp': particles.px,
+                'y': particles.y,
+                'yp': particles.py,
+                'particle_id': particles.particle_id,
+                'turn': particles.at_turn
+            })
 
         # Create track job with initialised lattice and particle distr.
-        # and start tracking.
+        # and perform tracking job
+        # (job.collect() required for OpenCL, CUDA, to sync. device and
+        # host memory. Here only CPU, but better to keep it in anyway
+        # according to M. Schwinzerl).
         job = pyst.TrackJob(self.elements, particles)
         job.track(n_turns)
         job.collect()
 
-        # Process output, bring into 'correct' form and save to file
+        # Turn-by-turn particle information for training dataset
         pdata = job.output.particles[0]
-        msk_last_turn = (pdata.at_turn == (n_turns - 1))
-        pdata_x = pdata.x[msk_last_turn]
-        pdata_px = pdata.px[msk_last_turn]
-        pdata_pid = pdata.particle_id[msk_last_turn]
+        df = pd.DataFrame(
+            data={
+                'x': pdata.x,
+                'xp': pdata.px,
+                'y': pdata.y,
+                'yp': pdata.py,
+                'particle_id': pdata.particle_id,
+                'turn': pdata.at_turn + 1
+            })
 
-        idx_srt_out = np.argsort(pdata_pid)
-        df['x_out'] = pdata_x.take(idx_srt_out)
-        df['xp_out'] = pdata_px.take(idx_srt_out)
-
-        # Compute centroid
-        centroid = np.zeros((n_turns, 2))
-        for i in range(n_turns):
-            msk_turn = (pdata.at_turn == i)
-            pdata_x = pdata.x[msk_turn]
-            pdata_px = pdata.px[msk_turn]
-            pdata_pid = pdata.particle_id[msk_turn]
-            idx_srt_out = np.argsort(pdata_pid)
-            centroid[i, 0] = np.mean(pdata_x.take(idx_srt_out))
-            centroid[i, 1] = np.mean(pdata_px.take(idx_srt_out))
-
-        df = pd.DataFrame(data=df)
-        # TODO: save data to h5 file -- allow for possibility to load from
-        #       file or regenerate data
-        # hdf_file = pd.HDFStore('sixtrack_training_set.h5')
-        # hdf_file['tracking_data'] = pdata_df
-
-        return df, centroid
+        df = df_init.append(df, ignore_index=True)
+        return df
 
 
 class LinearTracker:
@@ -152,4 +140,4 @@ class LinearTracker:
             'x_out': out[0, :], 'xp_out': out[1, :]}
         df = pd.DataFrame(data_dict)
 
-        return df, centroid
+        return df
