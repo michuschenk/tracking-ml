@@ -2,7 +2,6 @@
 # https://towardsdatascience.com/building-a-deep-learning-model-using-keras-1548ca149d37
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 
@@ -20,11 +19,11 @@ sns.set_style('white')
 
 # (0) CONFIG.
 tracking = 'nonlinear'
-n_particles = 1000
+n_particles = 100000
 n_nodes_NN = 15
 n_hidden_layers = 1   # >= 1
 generate_training_set = True
-generate_test_set = True
+generate_test_set = False
 visualise_training_data = True
 
 # (1) GENERATE TRAINING DATA USING EITHER LIN. TRACKER OR PYSIXTRACKLIB
@@ -44,11 +43,11 @@ if generate_training_set:
     if tracking == 'linear':
         lin_tracker = LinearTracker(beta_s0=25., beta_s1=25., Q=20.13)
         training_data = lin_tracker.create_dataset(
-            n_particles=n_particles, distr='Gaussian', n_turns=10)
+            n_particles=n_particles, distr='Gaussian', n_turns=1000)
     elif tracking == 'nonlinear':
         nonlin_tracker = PySixTrackLibTracker()
         training_data = nonlin_tracker.create_dataset(
-            n_particles=n_particles, n_turns=10)
+            n_particles=n_particles, n_turns=100)
     hdf_file = pd.HDFStore('{:s}_training_dataset.h5'.format(tracking),
                            mode='w')
     hdf_file['training_data'] = training_data
@@ -65,18 +64,23 @@ else:
 # (2a) Data frames, input and target
 train_X = (training_data.loc[training_data['turn'] == 0]
            .sort_values('particle_id')
-           .drop(columns=['particle_id', 'turn']))
+           .drop(columns=['particle_id', 'turn'])
+           .reset_index())
 train_y = (training_data.loc[training_data['turn'] == 1]
            .sort_values('particle_id')
-           .drop(columns=['particle_id', 'turn']))
+           .drop(columns=['particle_id', 'turn'])
+           .reset_index())
 
 if visualise_training_data:
-    fig0 = plt.figure(0, figsize=(11, 6))
+    # Training data before scaling
+    fig0 = plt.figure(0, figsize=(12, 6))
     plt.suptitle("1-turn training data\n(before scaling)", fontsize=18)
-    vis.phase_space_data(train_X, train_y, fig=fig0)
+    vis.input_vs_output_data(train_X, train_y, fig=fig0)
 
 # (2b) Standardise input and target (important step). If e.g. output
 # not standardised, NN does not train well.
+# TODO: Input from Elena Fol: try to initialise weights in correct range
+#  this should also solve the problem (instead of standardising output)
 scaler_in = StandardScaler()
 train_X = pd.DataFrame(
     data=scaler_in.fit_transform(train_X), columns=train_X.columns)
@@ -86,10 +90,12 @@ train_y = pd.DataFrame(
     data=scaler_out.fit_transform(train_y), columns=train_y.columns)
 
 if visualise_training_data:
-    fig1 = plt.figure(1, figsize=(11, 6))
+    # Training data after scaling
+    fig1 = plt.figure(1, figsize=(12, 6))
     plt.suptitle("1-turn training data\n(after scaling)", fontsize=18)
-    vis.phase_space_data(
-        train_X, train_y, fig=fig1, xlims=(-5, 5), ylims=(-5, 5))
+    vis.input_vs_output_data(
+        train_X, train_y, fig=fig1, xlims=(-5, 5), ylims=(-5, 5),
+        units=False)
 
 # (3) BUILD MODEL: use Sequential network type
 # (sequential is the simplest way to build model in Keras:
@@ -156,12 +162,14 @@ else:
     test_data_1turn = hdf_file['test_data_1turn']
 
 
-test_X = (test_data_1turn.loc[training_data['turn'] == 0]
+test_X = (test_data_1turn.loc[test_data_1turn['turn'] == 0]
           .sort_values('particle_id')
-          .drop(columns=['particle_id', 'turn']))
-test_y = (test_data_1turn.loc[training_data['turn'] == 1]
+          .drop(columns=['particle_id', 'turn'])
+          .reset_index())
+test_y = (test_data_1turn.loc[test_data_1turn['turn'] == 1]
           .sort_values('particle_id')
-          .drop(columns=['particle_id', 'turn']))
+          .drop(columns=['particle_id', 'turn'])
+          .reset_index())
 
 # Apply *exactly same* standardisation as done for training
 # (the values used for rescaling / shift are stored in the 'scalers'
@@ -175,15 +183,21 @@ prediction_NN = pd.DataFrame(
     data=scaler_out.inverse_transform(prediction_NN),
     columns=test_X.columns)
 
-# Transform back ...
+# Transform input back ...
 test_X = pd.DataFrame(
     data=scaler_in.inverse_transform(test_X), columns=test_X.columns)
 
 # Visualise results
 # Phase space
-fig2 = plt.figure(2, figsize=(11, 6))
+fig2 = plt.figure(2, figsize=(12, 6))
 plt.suptitle('1-turn tracking\n(full tracking vs. NN)', fontsize=18)
-vis.phase_space_data(test_X, test_y, fig=fig2, reduced_plot=False)
+vis.test_data_phase_space(prediction_NN, test_y, fig=fig2)
+
+# Particle-by-particle comparison
+fig3 = plt.figure(3, figsize=(15, 6))
+plt.suptitle('1-turn tracking\n(full tracking vs. NN)', fontsize=18)
+vis.test_data(prediction_NN, test_y, fig=fig3)
+
 
 """
 plt.plot(prediction_nn_df['x_NN'], prediction_nn_df['xp_NN'], c='r', ls='None',
