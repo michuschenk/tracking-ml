@@ -22,7 +22,8 @@ class PySixTrackLibTracker:
         # Build elements for SixTrackLib
         self.elements = pyst.Elements.from_mad(mad.sequence.sps)
 
-    def create_dataset(self, n_particles=100000, n_turns=1):
+    def create_dataset(self, n_particles=100000, n_turns=1, xsize=5e-5,
+                       ysize=5e-5):
         # Add a beam monitor to elements
         # (given kwargs values will produce only turn by turn data for
         # all particles)
@@ -34,10 +35,10 @@ class PySixTrackLibTracker:
         # TODO: Change possible initial particle distributions
         particles = pyst.Particles.from_ref(
             num_particles=n_particles, p0c=26e9)
-        particles.x[:] = 1e-5 * np.random.randn(n_particles)
-        particles.px[:] = 1e-6 * np.random.randn(n_particles)
-        particles.y[:] = 1e-5 * np.random.randn(n_particles)
-        particles.py[:] = 1e-6 * np.random.randn(n_particles)
+        particles.x[:] = xsize * np.random.randn(n_particles)
+        particles.px[:] = xsize/10. * np.random.randn(n_particles)
+        particles.y[:] = ysize * np.random.randn(n_particles)
+        particles.py[:] = ysize/10. * np.random.randn(n_particles)
         df_init = pd.DataFrame(
             data={
                 'x': particles.x,
@@ -141,3 +142,21 @@ class LinearTracker:
         df = pd.DataFrame(data_dict)
 
         return df
+
+
+def generate_tracking_data(tracker, n_particles, n_turns, xsize=5e-5,
+                           ysize=5e-5, filename="temp"):
+    if tracker == 'linear':
+        lin_tracker = LinearTracker(beta_s0=25., beta_s1=25., Q=20.13)
+        tracking_data = lin_tracker.create_dataset(
+            n_particles=n_particles, distr='Gaussian', n_turns=n_turns)
+    elif tracker == 'nonlinear':
+        nonlin_tracker = PySixTrackLibTracker()
+        tracking_data = nonlin_tracker.create_dataset(
+            n_particles=n_particles, n_turns=n_turns, xsize=xsize,
+            ysize=ysize)
+    hdf_file = pd.HDFStore(filename, mode='w')
+    hdf_file['data'] = tracking_data
+    hdf_file.close()
+    
+    return tracking_data

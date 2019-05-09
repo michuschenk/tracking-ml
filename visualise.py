@@ -1,4 +1,10 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# Set plot style
+sns.set(context='talk', font_scale=0.9)
+sns.set_style('white')
 
 
 def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
@@ -95,8 +101,44 @@ def test_data_phase_space(prediction, ground_truth, fig,
         left=0.09, bottom=0.12, top=0.81, right=0.8, wspace=0.34)
     plt.show()
 
+def test_data_phase_space_single(
+        prediction, ground_truth, fig, xlims=(-1.2e-4, 1.2e-4),
+        ylims=(-1.2e-6, 1.2e-6), units=True, txt=""):
+    axs = [fig.add_subplot(111)]
 
-def test_data(prediction, ground_truth, fig):
+    ground_truth.plot.scatter(
+        x='y', y='yp', ax=axs[0], s=70, c='tab:green',
+        label='Ground truth\n(full tracking)', linewidths=0)
+    prediction.plot.scatter(
+        x='y', y='yp', ax=axs[0], s=50, c='tab:red',
+        marker='x', label='NN prediction', linewidths=0.5)
+
+    # axs[0].set_title('Vertical plane')
+    if units:
+        axs[0].set(xlabel=r"$y$ (m)", ylabel=r"$y'$")
+    else:
+        axs[0].set(xlabel=r"$y$", ylabel=r"$y'$")
+    axs[0].legend(fontsize=15)
+
+    for ax in axs:
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
+                            useMathText=True)
+        ax.ticklabel_format(style='sci', axis='x', scilimits=(0, 0),
+                            useMathText=True)
+        ax.set_xlim(xlims)
+        ax.set_ylim(ylims)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+
+    axs[0].text(0.05, 0.06, s=txt, horizontalalignment='left',
+                transform=axs[0].transAxes)
+
+    plt.subplots_adjust(
+        left=0.16, bottom=0.12, top=0.86, right=0.92, wspace=0.34)
+    plt.show()
+
+
+def test_data(prediction, ground_truth, fig, xlabel='Particle ID'):
     axs = [fig.add_subplot(221), fig.add_subplot(222),
            fig.add_subplot(223), fig.add_subplot(224)]
 
@@ -121,8 +163,8 @@ def test_data(prediction, ground_truth, fig):
     axs[1].set_title('Vertical plane')
     axs[0].set(ylabel="x (m)")
     axs[1].set(ylabel="y (m)")
-    axs[2].set(xlabel="Particle id", ylabel="x'")
-    axs[3].set(xlabel="Particle id", ylabel="y'")
+    axs[2].set(xlabel=xlabel, ylabel="x'")
+    axs[3].set(xlabel=xlabel, ylabel="y'")
     axs[1].legend(loc='upper left', bbox_to_anchor=(1.03, 1.02))
 
     for ax in axs:
@@ -138,4 +180,55 @@ def test_data(prediction, ground_truth, fig):
     plt.setp(axs[1].get_xticklabels(), visible=False)
     plt.subplots_adjust(
         left=0.08, bottom=0.12, top=0.84, right=0.83, wspace=0.27)
+    plt.show()
+
+
+def test_data_difference(difference, fig, xlabel='Particle ID'):
+    axs = [fig.add_subplot(211), fig.add_subplot(212)]
+
+    difference.plot(
+        y=['x', 'y'], ax=axs[0], color=["peru", "forestgreen"])
+    difference.plot(
+        y=['xp', 'yp'], ax=axs[1], color=["peru", "forestgreen"])
+    axs[0].set(ylabel=r"$\Delta u$")
+    axs[1].set(xlabel=xlabel, ylabel=r"$\Delta u'$")
+    axs[0].legend([r'$x$', r'$y$'])
+    axs[1].legend([r"$x'$", r"$y'$"])
+
+    for ax in axs:
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
+                            useMathText=True)
+        ax.set_xlim(0, difference.shape[0])
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+        lim_max = np.max(np.abs(ax.get_ylim()))
+        ax.set_ylim(-lim_max, lim_max)
+
+    plt.setp(axs[0].get_xticklabels(), visible=False)
+    plt.subplots_adjust(left=0.14, bottom=0.12, top=0.84, right=0.83)
+    plt.show()
+
+
+def training_evolution_NN(history, fig):
+    axs = [fig.add_subplot(211), fig.add_subplot(212)]
+
+    history.plot(
+        y=['loss', 'val_loss'], ax=axs[0], color=["r", "b"])
+    history.plot(
+        y=['acc', 'val_acc'], ax=axs[1], color=["r", "b"])
+    axs[0].set(ylabel="Loss")
+    axs[0].set_yscale("log")
+    axs[1].set(xlabel="Epoch", ylabel="Accuracy")
+    axs[0].legend(["Training", "Validation"])
+    axs[1].legend(["Training", "Validation"])
+
+    for ax in axs:
+        ax.set_xlim(0, history.shape[0])
+        # ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        # ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+    axs[1].ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
+                            useMathText=True)
+
+    plt.setp(axs[0].get_xticklabels(), visible=False)
+    plt.subplots_adjust(left=0.14, bottom=0.12, top=0.84, right=0.83)
     plt.show()

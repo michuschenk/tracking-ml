@@ -1,21 +1,76 @@
 import timeit
-from helpers import LinearTracker
+from trackers import LinearTracker, PySixTrackLibTracker
+import numpy as np
+from cpymad.madx import Madx
+import pysixtracklib as pyst
 
 def wrapper(func, *args, **kwargs):
     def wrapped():
         return func(*args, **kwargs)
     return wrapped
 
-
-def track_NN(NN_tracker_model, inp):
-    NN_tracker_model.predict(inp)
+def track_NN(NN_tracker, scaler_in, scaler_out, inp):
+    inp = scaler_in.transform(inp)
+    inp = NN_tracker.predict(inp)
+    inp = scaler_out.inverse_transform(inp)
 
 def track_classic(lin_track, inp):
     lin_track.track(inp[0, :], inp[1, :])
 
-wrapped = wrapper(track_NN, inp)
-timeit.timeit(wrapped, number=10)
+def track_pysixtracklib(trackjob):
+    job.track(100)
+    job.collect()
 
-lin_track = LinearTracker(1, 1, 20.13)
-wrapped = wrapper(track_classic, crds_in)
-timeit.timeit(wrapped, number=10)
+wrapped = wrapper(track_NN, NN_tracker, scaler_in, scaler_out, inp)
+timeit.timeit(wrapped, number=100)
+
+# lin_track = LinearTracker(1, 1, 20.13)
+# wrapped = wrapper(track_classic, crds_in)
+# timeit.timeit(wrapped, number=100)
+
+
+# Nonlin. tracker
+# Prepare MAD-X, load SPS sequence (just an example)
+mad = Madx()
+mad.options.echo = False
+mad.call(file="SPS_Q20_thin.seq")
+mad.use(sequence='sps')
+twiss = mad.twiss()
+q1mad = twiss.summary['q1']
+q2mad = twiss.summary['q2']
+print('q1mad', q1mad)
+print('q2mad', q2mad)
+
+# Build elements for SixTrackLib
+elements = pyst.Elements.from_mad(mad.sequence.sps)
+
+nonlin_track = PySixTrackLibTracker()
+n_turns = 100
+pyst.append_beam_monitors_to_lattice(
+    elements.cbuffer, until_turn_elem_by_elem=0,
+    until_turn_turn_by_turn=n_turns, until_turn=0, skip_turns=0)
+
+# Initialise particle distribution
+n_particles = 100
+xsize = 1e-5
+ysize = 1e-5
+particles = pyst.Particles.from_ref(
+    num_particles=n_particles, p0c=26e9)
+particles.x[:] = xsize * np.random.randn(n_particles)
+particles.px[:] = xsize/10. * np.random.randn(n_particles)
+particles.y[:] = ysize * np.random.randn(n_particles)
+particles.py[:] = ysize/10. * np.random.randn(n_particles)
+df_init = pd.DataFrame(
+    data={
+        'x': particles.x,
+        'xp': particles.px,
+        'y': particles.y,
+        'yp': particles.py,
+        'particle_id': particles.particle_id,
+        'turn': particles.at_turn
+    })
+
+job = pyst.TrackJob(elements, particles)
+
+wrapped = wrapper(track_pysixtracklib, job)
+timeit.timeit(wrapped, number=1)
