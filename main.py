@@ -5,9 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.optimizers import Adam
+from keras.models import Model, Sequential
+from keras.layers import Dense, Input
+from keras.layers.recurrent import SimpleRNN
 from keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
@@ -110,30 +110,22 @@ if visualise_training_data:
         train_X, train_y, fig=fig1, xlims=(-5, 5), ylims=(-5, 5),
         units=False)
 
-# (3) BUILD MODEL: use Sequential network type
-# (sequential is the simplest way to build model in Keras:
-# we add layer by layer)
-NN_tracker = Sequential()
+# (3) BUILD MODEL: Try simple RNN as found on website:
+# https://fairyonice.github.io/Understand-Keras's-RNN-behind-the-scenes-with-a-sin-wave-example.html
+in_out_neurons = 1
+hidden_neurons = 1
+inp = Input(batch_shape=(600, 2, in_out_neurons))
 
-# Input layer
-# TODO: Try different activation function
-# (e.g. relu, tanh (hyperbolic tangent activation)
-# tanh -> does not work as well as relu)
-n_input_nodes = train_X.shape[1]
-NN_tracker.add(
-    Dense(n_nodes_NN, activation='relu', input_shape=(n_input_nodes,),
-          use_bias=True))
+rnn = SimpleRNN(hidden_neurons,
+                return_sequences=False,
+                stateful=stateful,
+                name="RNN")(inp)
 
-# Additional hidden layers
-if n_hidden_layers < 1:
-    raise ValueError("There must be at least 1 hidden layer.")
+dens = Dense(in_out_neurons, name="dense")(rnn)
+model = Model(inputs=[inp], outputs=[dens])
 
-for l in range(n_hidden_layers-1):
-    NN_tracker.add(Dense(n_nodes_NN, activation='relu'))
+model.compile(loss="mean_squared_error", optimizer="rmsprop")
 
-# Output layer
-n_output_nodes = train_y.shape[1]
-NN_tracker.add(Dense(n_output_nodes))  # activation='linear'
 
 # (4) COMPILE MODEL
 # Choose optimiser and loss function
