@@ -7,8 +7,9 @@ import numpy as np
 
 from keras.models import Sequential
 from keras.layers import Dense
+from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 from trackers import generate_tracking_data
 import visualise as vis
@@ -17,13 +18,13 @@ import visualise as vis
 tracker = 'nonlinear'
 
 generate_training_set = False
-n_particles_train = 100000
+n_particles_train = 50000
 # Misleading name: size of training dataset, only 1 turn used for training
-n_turns_train = 100
-visualise_training_data = False
+n_turns_train = 20
+visualise_training_data = True
 
 # NN configuration
-n_nodes_NN = 12
+n_nodes_NN = 15
 n_hidden_layers = 1   # >= 1
 visualise_NN_training = True
 
@@ -32,7 +33,7 @@ generate_test_set_multiturn = False
 n_particles_test_1turn = 100
 n_particles_test_multiturn = 1000
 n_turns_test_multiturn = 2
-visualise_test_results = False
+visualise_test_results = True
 
 # (1) GENERATE TRAINING DATA USING EITHER LIN. TRACKER OR PYSIXTRACKLIB
 # Note that part of training set will be used as validation set during
@@ -60,23 +61,33 @@ else:
 # We train from first turn data only (i.e. train_X will be initial
 # particle phase space coords. and train_y (targets) are phase space
 # coords. after 1 turn.)
+# TODO: Try to train from turn 1 to turn 2 (uses more 'matched' beam)
 # (2a) Data frames, input and target
-train_X = (training_data.loc[training_data['turn'] == 0]
-           .sort_values('particle_id')
-           .drop(columns=['particle_id', 'turn']))
-train_y = (training_data.loc[training_data['turn'] == 1]
-           .sort_values('particle_id')
-           .reset_index()
-           .drop(columns=['index', 'particle_id', 'turn']))
+# From turn 0 -> 1, then from turn 1 -> 2, etc. ?
+train_X = pd.DataFrame()
+train_y = pd.DataFrame()
 
-# Select subsample of training data
-train_X = train_X[:n_particles_train]
-train_y = train_y[:n_particles_train]
+for i in range(n_turns_train):
+    train_X_tmp = (training_data.loc[training_data['turn'] == i]
+                   .sort_values('particle_id')
+                   .drop(columns=['particle_id', 'turn']))
+    train_y_tmp = (training_data.loc[training_data['turn'] == (i+1)]
+                   .sort_values('particle_id')
+                   .reset_index()
+                   .drop(columns=['index', 'particle_id', 'turn']))
+
+    # Select subsample of training data
+    train_X_tmp = train_X_tmp[:n_particles_train]
+    train_y_tmp = train_y_tmp[:n_particles_train]
+
+    train_X = train_X.append(train_X_tmp)
+    train_y = train_y.append(train_y_tmp)
+
 
 if visualise_training_data:
     # Training data before scaling
     fig0 = plt.figure(0, figsize=(12, 6))
-    plt.suptitle("1-turn training data\n(before scaling)", fontsize=18)
+    plt.suptitle("Training data\n(before scaling)", fontsize=18)
     vis.input_vs_output_data(train_X, train_y, fig=fig0)
 
 # (2b) Standardise input and target (important step). If e.g. output
@@ -94,7 +105,7 @@ train_y = pd.DataFrame(
 if visualise_training_data:
     # Training data after scaling
     fig1 = plt.figure(1, figsize=(12, 6))
-    plt.suptitle("1-turn training data\n(after scaling)", fontsize=18)
+    plt.suptitle("Training data\n(after scaling)", fontsize=18)
     vis.input_vs_output_data(
         train_X, train_y, fig=fig1, xlims=(-5, 5), ylims=(-5, 5),
         units=False)
@@ -111,7 +122,7 @@ NN_tracker = Sequential()
 n_input_nodes = train_X.shape[1]
 NN_tracker.add(
     Dense(n_nodes_NN, activation='relu', input_shape=(n_input_nodes,),
-          use_bias=True, kernel_initializer='random_uniform'))
+          use_bias=True))
 
 # Additional hidden layers
 if n_hidden_layers < 1:
@@ -126,6 +137,9 @@ NN_tracker.add(Dense(n_output_nodes))  # activation='linear'
 
 # (4) COMPILE MODEL
 # Choose optimiser and loss function
+# lr=1e-3 is default
+# adam = Adam(lr=1e-3, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0,
+#             amsgrad=False)
 NN_tracker.compile(optimizer='adam', loss='mean_squared_error',
                    metrics=['acc'])
 
@@ -133,8 +147,9 @@ NN_tracker.compile(optimizer='adam', loss='mean_squared_error',
 # Fitting of model in epochs: use EarlyStopping to cancel
 # training in case model does not improve anymore before
 # reaching end of max. number of epochs (patience=5 means:
-# stop if model does not change for 5 epochs in a row)
-early_stopping_monitor = EarlyStopping(patience=15)
+# stop if model performance on validation 'does not change'
+# for 5 epochs in a row)
+early_stopping_monitor = EarlyStopping(patience=5)
 training_history = NN_tracker.fit(
     train_X, train_y, validation_split=0.2, epochs=500,
     callbacks=[early_stopping_monitor])
@@ -158,17 +173,17 @@ filename = '{:s}_test_dataset_1turn.h5'.format(tracker)
 if generate_test_set_1turn:
     # Generate new training data set and overwrite existing h5 file
     test_data_1turn = generate_tracking_data(
-        tracker=tracker, n_particles=n_particles_test_1turn, n_turns=1,
+        tracker=tracker, n_particles=n_particles_test_1turn, n_turns=2,
         filename=filename, xsize=1e-5, ysize=1e-5)
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     test_data_1turn = hdf_file['data']
 
 
-test_X = (test_data_1turn.loc[test_data_1turn['turn'] == 0]
+test_X = (test_data_1turn.loc[test_data_1turn['turn'] == 1]
           .sort_values('particle_id')
           .drop(columns=['particle_id', 'turn']))
-test_y = (test_data_1turn.loc[test_data_1turn['turn'] == 1]
+test_y = (test_data_1turn.loc[test_data_1turn['turn'] == 2]
           .sort_values('particle_id')
           .reset_index()
           .drop(columns=['particle_id', 'turn', 'index']))
@@ -216,22 +231,21 @@ if generate_test_set_multiturn:
     # Generate new training data set and overwrite existing h5 file
     test_data_multiturn = generate_tracking_data(
         tracker=tracker, n_particles=n_particles_test_multiturn,
-        n_turns=n_turns_test_multiturn, filename=filename, xsize=1e-6,
-        ysize=1e-6)
+        n_turns=n_turns_test_multiturn, filename=filename, xsize=5e-5,
+        ysize=5e-5)
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     test_data_multiturn = hdf_file['data']
 
 
-test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 0]
+test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 1]
           .sort_values('particle_id')
           .drop(columns=['particle_id', 'turn']))
 
-test_y = (test_data_multiturn.loc[test_data_multiturn['turn'] == 2]
+test_y = (test_data_multiturn.loc[test_data_multiturn['turn'] == 3]
           .sort_values('particle_id')
           .reset_index()
           .drop(columns=['particle_id', 'turn', 'index']))
-
 
 # Turn 1
 # Apply *exactly same* standardisation as done for training
