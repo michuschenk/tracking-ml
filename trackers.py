@@ -23,7 +23,7 @@ class PySixTrackLibTracker:
         self.elements = pyst.Elements.from_mad(mad.sequence.sps)
 
     def create_dataset(self, n_particles=100000, n_turns=1, xsize=5e-5,
-                       ysize=5e-5):
+                       ysize=5e-5, distribution='Gaussian'):
         # Add a beam monitor to elements
         # (given kwargs values will produce only turn by turn data for
         # all particles)
@@ -35,10 +35,21 @@ class PySixTrackLibTracker:
         # TODO: Change possible initial particle distributions
         particles = pyst.Particles.from_ref(
             num_particles=n_particles, p0c=26e9)
-        particles.x[:] = xsize * np.random.randn(n_particles)
-        particles.px[:] = xsize/10. * np.random.randn(n_particles)
-        particles.y[:] = ysize * np.random.randn(n_particles)
-        particles.py[:] = ysize/10. * np.random.randn(n_particles)
+        if distribution == 'Gaussian':
+            particles.x[:] = xsize * np.random.randn(n_particles)
+            particles.px[:] = xsize/10. * np.random.randn(n_particles)
+            particles.y[:] = ysize * np.random.randn(n_particles)
+            particles.py[:] = ysize/10. * np.random.randn(n_particles)
+        elif distribution == 'Uniform':
+            particles.x[:] = np.random.uniform(
+                low=-xsize, high=xsize, size=n_particles)
+            particles.px[:] = np.random.uniform(
+                low=-xsize/10., high=xsize/10., size=n_particles)
+            particles.y[:] = np.random.uniform(
+                low=-ysize, high=ysize, size=n_particles)
+            particles.py[:] = np.random.uniform(
+                low=-ysize/10., high=ysize/10., size=n_particles)
+
         df_init = pd.DataFrame(
             data={
                 'x': particles.x,
@@ -113,12 +124,12 @@ class LinearTracker:
         xp_out = self.M10*x_in + self.M11*xp_in
         return x_out, xp_out
 
-    def create_dataset(self, n_particles=1000, distr='Gaussian', n_turns=1):
+    def create_dataset(self, n_particles=1000, distribution='Gaussian', n_turns=1):
         # Generate input 'bunch' coordinates
-        if distr == 'Gaussian':
+        if distribution == 'Gaussian':
             x = np.random.randn(n_particles)
             xp = np.random.randn(n_particles) / self.beta_s0
-        elif distr == 'Uniform':
+        elif distribution == 'Uniform':
             # TODO: Choice of grid very arbitrary ...
             x = np.random.uniform(-6., 6., n_particles)
             xp = np.random.uniform(
@@ -144,17 +155,19 @@ class LinearTracker:
         return df
 
 
-def generate_tracking_data(tracker, n_particles, n_turns, xsize=5e-5,
-                           ysize=5e-5, filename="temp"):
+def generate_tracking_data(tracker, n_particles, n_turns, xsize=1e-6,
+                           ysize=1e-6, filename="temp",
+                           distribution='Gaussian'):
     if tracker == 'linear':
         lin_tracker = LinearTracker(beta_s0=25., beta_s1=25., Q=20.13)
         tracking_data = lin_tracker.create_dataset(
-            n_particles=n_particles, distr='Gaussian', n_turns=n_turns)
+            n_particles=n_particles, distribution=distribution,
+            n_turns=n_turns)
     elif tracker == 'nonlinear':
         nonlin_tracker = PySixTrackLibTracker()
         tracking_data = nonlin_tracker.create_dataset(
             n_particles=n_particles, n_turns=n_turns, xsize=xsize,
-            ysize=ysize)
+            ysize=ysize, distribution=distribution)
     hdf_file = pd.HDFStore(filename, mode='w')
     hdf_file['data'] = tracking_data
     hdf_file.close()
