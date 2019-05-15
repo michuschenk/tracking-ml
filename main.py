@@ -17,10 +17,10 @@ import visualise as vis
 # (0) CONFIG.
 tracker = 'nonlinear'
 
-generate_training_set = False
+generate_training_set = True
 n_particles_train = 50000
 # Misleading name: size of training dataset, only 1 turn used for training
-n_turns_train = 20
+n_turns_train = 10
 visualise_training_data = True
 
 # NN configuration
