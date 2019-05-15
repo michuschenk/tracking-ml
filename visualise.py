@@ -9,7 +9,7 @@ sns.set_style('white')
 
 def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
                          xlims=(-3e-4, 3e-4), ylims=(-1e-5, 1e-5),
-                         units=True):
+                         units=True, col='r'):
     """ Function to visualise training data (input and output).
     reduced_plot: if True not all particles will be shown. """
     # TODO: make more generic for any training data
@@ -17,22 +17,22 @@ def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
     axs = [fig.add_subplot(121), fig.add_subplot(122)]
 
     if reduced_plot:
-        step = int(data_X.shape[0] / 1000.)
+        step = int(data_X.shape[0] / 5000.)
     else:
         step = 1
 
     data_X.iloc[::step].plot.scatter(
-        x='x', y='xp', ax=axs[0], s=14, c='darkred', alpha=0.4,
+        x='x', y='xp', ax=axs[0], s=14, alpha=0.3, c=col,
         label='Initial', linewidths=0, legend=None)
-    data_y.iloc[::step].plot.scatter(
-        x='x', y='xp', ax=axs[0], s=14, c='mediumblue', alpha=0.4,
-        label='Target', linewidths=0, legend=None)
+    # data_y.iloc[::step].plot.scatter(
+    #     x='x', y='xp', ax=axs[0], s=14, c=col_target, alpha=0.4,
+    #     label='Target', linewidths=0, marker='s', legend=None)
     data_X.iloc[::step].plot.scatter(
-        x='y', y='yp', ax=axs[1], s=14, c='darkred', alpha=0.4,
-        label='Initial', linewidths=0)
-    data_y.iloc[::step].plot.scatter(
-        x='y', y='yp', ax=axs[1], s=14, c='mediumblue', alpha=0.4,
-        label='Target', linewidths=0)
+        x='y', y='yp', ax=axs[1], s=14, alpha=0.3, c=col,
+        label='Initial', linewidths=0, legend=None)
+    # data_y.iloc[::step].plot.scatter(
+    #     x='y', y='yp', ax=axs[1], s=14, c=col_target, alpha=0.4,
+    #     label='Target', linewidths=0, marker='s')
 
     axs[0].set_title('Horizontal plane')
     axs[1].set_title('Vertical plane')
@@ -42,7 +42,7 @@ def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
     else:
         axs[0].set(xlabel="x", ylabel="x'")
         axs[1].set(xlabel="y", ylabel="y'")
-    axs[1].legend(loc='upper left', bbox_to_anchor=(1.02, 1.02))
+    # axs[1].legend(loc='upper left', bbox_to_anchor=(1.02, 1.02))
 
     for ax in axs:
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),

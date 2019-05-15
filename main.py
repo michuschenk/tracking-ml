@@ -3,11 +3,13 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.pyplot import cm
 import numpy as np
 
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, LeakyReLU
 from keras.optimizers import Adam
+from keras.initializers import glorot_normal
 from keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
@@ -18,21 +20,23 @@ import visualise as vis
 tracker = 'nonlinear'
 
 generate_training_set = True
-n_particles_train = 50000
+n_particles_train = 60000
 # Misleading name: size of training dataset, only 1 turn used for training
-n_turns_train = 10
-visualise_training_data = True
+i_turn_train = 0
+f_turn_train = 20
+n_turns_train = f_turn_train - i_turn_train
+
+visualise_training_data = False
 
 # NN configuration
-n_nodes_NN = 15
-n_hidden_layers = 1   # >= 1
+n_nodes_NN = 60
 visualise_NN_training = True
 
-generate_test_set_1turn = False
-generate_test_set_multiturn = False
+generate_test_set_1turn = True
+generate_test_set_multiturn = True
 n_particles_test_1turn = 100
 n_particles_test_multiturn = 1000
-n_turns_test_multiturn = 2
+n_turns_test_multiturn = 100
 visualise_test_results = True
 
 # (1) GENERATE TRAINING DATA USING EITHER LIN. TRACKER OR PYSIXTRACKLIB
@@ -52,7 +56,8 @@ if generate_training_set:
     # Generate new training data set and overwrite existing h5 file
     training_data = generate_tracking_data(
         tracker=tracker, n_particles=n_particles_train,
-        n_turns=n_turns_train, filename=filename)
+        n_turns=n_turns_train, filename=filename,
+        distribution='Uniform')
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     training_data = hdf_file['data']
@@ -67,7 +72,8 @@ else:
 train_X = pd.DataFrame()
 train_y = pd.DataFrame()
 
-for i in range(n_turns_train):
+cols = cm.Accent(np.linspace(0, 1, f_turn_train-i_turn_train))
+for i in range(i_turn_train, f_turn_train):
     train_X_tmp = (training_data.loc[training_data['turn'] == i]
                    .sort_values('particle_id')
                    .drop(columns=['particle_id', 'turn']))
@@ -80,15 +86,17 @@ for i in range(n_turns_train):
     train_X_tmp = train_X_tmp[:n_particles_train]
     train_y_tmp = train_y_tmp[:n_particles_train]
 
+    if visualise_training_data:
+        # Training data before scaling
+        fig0 = plt.figure(0, figsize=(12, 6))
+        plt.suptitle("Training data\n(before scaling)", fontsize=18)
+        col = cols[i]
+        vis.input_vs_output_data(train_X_tmp, train_y_tmp, fig=fig0,
+                                 col=col)
+
     train_X = train_X.append(train_X_tmp)
     train_y = train_y.append(train_y_tmp)
 
-
-if visualise_training_data:
-    # Training data before scaling
-    fig0 = plt.figure(0, figsize=(12, 6))
-    plt.suptitle("Training data\n(before scaling)", fontsize=18)
-    vis.input_vs_output_data(train_X, train_y, fig=fig0)
 
 # (2b) Standardise input and target (important step). If e.g. output
 # not standardised, NN does not train well.
@@ -120,27 +128,28 @@ NN_tracker = Sequential()
 # (e.g. relu, tanh (hyperbolic tangent activation)
 # tanh -> does not work as well as relu)
 n_input_nodes = train_X.shape[1]
+leaky_relu = LeakyReLU(alpha=0.2)
 NN_tracker.add(
-    Dense(n_nodes_NN, activation='relu', input_shape=(n_input_nodes,),
-          use_bias=True))
+    Dense(n_nodes_NN,
+          activation=leaky_relu,
+          input_shape=(n_input_nodes,),
+          kernel_initializer=glorot_normal(seed=0)))
 
-# Additional hidden layers
-if n_hidden_layers < 1:
-    raise ValueError("There must be at least 1 hidden layer.")
-
-for l in range(n_hidden_layers-1):
-    NN_tracker.add(Dense(n_nodes_NN, activation='relu'))
+# NN_tracker.add(Dense(30, activation=leaky_relu,
+#                      kernel_initializer=glorot_normal(seed=0)))
 
 # Output layer
 n_output_nodes = train_y.shape[1]
-NN_tracker.add(Dense(n_output_nodes))  # activation='linear'
+NN_tracker.add(
+    Dense(n_output_nodes, kernel_initializer=glorot_normal(seed=0)))
 
 # (4) COMPILE MODEL
 # Choose optimiser and loss function
 # lr=1e-3 is default
-# adam = Adam(lr=1e-3, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0,
-#             amsgrad=False)
-NN_tracker.compile(optimizer='adam', loss='mean_squared_error',
+adam_opt = Adam(lr=5e-5, beta_1=0.9, beta_2=0.999, epsilon=None,
+                decay=1e-5,
+                amsgrad=False)
+NN_tracker.compile(optimizer=adam_opt, loss='mean_squared_error',
                    metrics=['acc'])
 
 # (5) TRAIN MODEL
@@ -149,10 +158,10 @@ NN_tracker.compile(optimizer='adam', loss='mean_squared_error',
 # reaching end of max. number of epochs (patience=5 means:
 # stop if model performance on validation 'does not change'
 # for 5 epochs in a row)
-early_stopping_monitor = EarlyStopping(patience=5)
+early_stopping_monitor = EarlyStopping(patience=30)
 training_history = NN_tracker.fit(
-    train_X, train_y, validation_split=0.2, epochs=500,
-    callbacks=[early_stopping_monitor])
+    train_X, train_y, validation_split=0.2, epochs=800,
+    callbacks=[early_stopping_monitor], batch_size=256)
 
 # (5b) Visualise training evolution
 if visualise_NN_training:
@@ -161,6 +170,8 @@ if visualise_NN_training:
     plt.suptitle('NN training evolution', fontsize=18)
     vis.training_evolution_NN(training_history, fig=fig2)
 
+
+"""
 # (6) TEST SET: MAKE PREDICTIONS WITH THE MODEL
 # Create new data with *same* 'machine': try to track one turn with NN
 # and compare to full tracking output
@@ -231,52 +242,51 @@ if generate_test_set_multiturn:
     # Generate new training data set and overwrite existing h5 file
     test_data_multiturn = generate_tracking_data(
         tracker=tracker, n_particles=n_particles_test_multiturn,
-        n_turns=n_turns_test_multiturn, filename=filename, xsize=5e-5,
-        ysize=5e-5)
+        n_turns=n_turns_test_multiturn, filename=filename, xsize=5e-7,
+        ysize=5e-7)
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     test_data_multiturn = hdf_file['data']
 
 
-test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 1]
+# Show phase space after n_multiturn_phase_space turns
+n_multiturn_phase_space = 50
+test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 0]
           .sort_values('particle_id')
           .drop(columns=['particle_id', 'turn']))
 
-test_y = (test_data_multiturn.loc[test_data_multiturn['turn'] == 3]
+test_y = (test_data_multiturn
+          .loc[test_data_multiturn['turn'] == n_multiturn_phase_space]
           .sort_values('particle_id')
           .reset_index()
           .drop(columns=['particle_id', 'turn', 'index']))
 
-# Turn 1
 # Apply *exactly same* standardisation as done for training
 # (the values used for rescaling / shift are stored in the 'scalers'
-test_X = pd.DataFrame(
-    data=scaler_in.transform(test_X), columns=test_X.columns)
+prediction_NN = test_X.copy()
+for i in range(n_multiturn_phase_space):
+    prediction_NN = scaler_in.transform(prediction_NN)
+    prediction_NN = NN_tracker.predict(prediction_NN)
+    prediction_NN = scaler_out.inverse_transform(prediction_NN)
 
-# Predict with trained NN model, perform inverse scaling of output
-# to have physical result directly comparable to tracking
-prediction_NN = NN_tracker.predict(test_X)
-prediction_NN = pd.DataFrame(
-    data=scaler_out.inverse_transform(prediction_NN),
-    columns=test_X.columns)
-
-# Turn 2
-prediction_NN = pd.DataFrame(
-    data=scaler_in.transform(prediction_NN), columns=test_X.columns)
-prediction_NN = NN_tracker.predict(prediction_NN)
-prediction_NN = pd.DataFrame(
-    data=scaler_out.inverse_transform(prediction_NN),
-    columns=test_X.columns)
+prediction_NN = pd.DataFrame(data=prediction_NN, columns=test_X.columns)
 
 # Visualise results
 fig33 = plt.figure(33, figsize=(12, 6))
-plt.suptitle('Phase space after 2 turns\n(full tracking vs. NN)',
-             fontsize=18)
+plt.suptitle('Phase space after {:d} turns\n(full tracking vs. NN)'
+             .format(n_multiturn_phase_space), fontsize=18)
 vis.test_data_phase_space(prediction_NN, test_y, fig=fig33)
+
+"""
+
 
 """
 # From test_data_multi-turn extract turn-by-turn centroid. This will be
 # the ground truth
+test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 0]
+          .sort_values('particle_id')
+          .drop(columns=['particle_id', 'turn']))
+
 test_y = (test_data_multiturn.groupby('turn')
           .mean()
           .drop(columns=['particle_id'])
