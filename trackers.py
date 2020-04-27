@@ -22,8 +22,8 @@ class PySixTrackLibTracker:
         # Build elements for SixTrackLib
         self.elements = pyst.Elements.from_mad(mad.sequence.sps)
 
-    def create_dataset(self, n_particles=100000, n_turns=1, xsize=5e-5,
-                       ysize=5e-5, distribution='Gaussian'):
+    def create_dataset(self, n_particles=100000, n_turns=1, xsize=1e-5,
+                       ysize=1e-5, distribution='Gaussian'):
         # Add a beam monitor to elements
         # (given kwargs values will produce only turn by turn data for
         # all particles)
@@ -156,8 +156,8 @@ class LinearTracker:
         return df
 
 
-def generate_tracking_data(tracker, n_particles, n_turns, xsize=1e-5,
-                           ysize=1e-5, filename="temp",
+def generate_tracking_data(tracker, n_particles, n_turns, xsize=1e-2,
+                           ysize=1e-2, filename="temp",
                            distribution='Gaussian'):
     if tracker == 'linear':
         lin_tracker = LinearTracker(beta_s0=25., beta_s1=25., Q=20.13)
