@@ -9,7 +9,7 @@ sns.set_style('white')
 
 def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
                          xlims=(-3e-4, 3e-4), ylims=(-1e-5, 1e-5),
-                         units=True, col='r'):
+                         units=True, col='r', bounds_X=None):
     """ Function to visualise training data (input and output).
     reduced_plot: if True not all particles will be shown. """
     # TODO: make more generic for any training data
@@ -33,6 +33,18 @@ def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
     # data_y.iloc[::step].plot.scatter(
     #     x='y', y='yp', ax=axs[1], s=14, c=col_target, alpha=0.4,
     #     label='Target', linewidths=0, marker='s')
+
+    if bounds_X is not None:
+        rec_x = plt.Rectangle((bounds_X[0, 0], bounds_X[0, 1]),
+                              2*bounds_X[1, 0], 2*bounds_X[1, 1],
+                              linewidth=2, edgecolor='mediumblue',
+                              facecolor='None')
+        rec_y = plt.Rectangle((bounds_X[0, 2], bounds_X[0, 3]),
+                              2*bounds_X[1, 2], 2*bounds_X[1, 3],
+                              linewidth=2, edgecolor='mediumblue',
+                              facecolor='None')
+        axs[0].add_patch(rec_x)
+        axs[1].add_patch(rec_y)
 
     axs[0].set_title('Horizontal plane')
     axs[1].set_title('Vertical plane')
@@ -61,7 +73,7 @@ def input_vs_output_data(data_X, data_y, fig, reduced_plot=True,
 
 def test_data_phase_space(prediction, ground_truth, fig,
                           xlims=(-3e-4, 3e-4), ylims=(-1e-5, 1e-5),
-                          units=True):
+                          units=True, bounds_X=None):
     axs = [fig.add_subplot(121), fig.add_subplot(122)]
 
     ground_truth.plot.scatter(
@@ -86,6 +98,18 @@ def test_data_phase_space(prediction, ground_truth, fig,
         axs[0].set(xlabel="x", ylabel="x'")
         axs[1].set(xlabel="y", ylabel="y'")
     axs[1].legend(loc='upper left', bbox_to_anchor=(1.02, 1.02))
+
+    if bounds_X is not None:
+        rec_x = plt.Rectangle((bounds_X[0, 0], bounds_X[0, 1]),
+                              2*bounds_X[1, 0], 2*bounds_X[1, 1],
+                              linewidth=2, edgecolor='mediumblue',
+                              facecolor='None')
+        rec_y = plt.Rectangle((bounds_X[0, 2], bounds_X[0, 3]),
+                              2*bounds_X[1, 2], 2*bounds_X[1, 3],
+                              linewidth=2, edgecolor='mediumblue',
+                              facecolor='None')
+        axs[0].add_patch(rec_x)
+        axs[1].add_patch(rec_y)
 
     for ax in axs:
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0, 0),
