@@ -7,43 +7,59 @@ from matplotlib.pyplot import cm
 import numpy as np
 
 from keras.models import Sequential
-from keras.layers import Dense, LeakyReLU
-from keras.optimizers import Adam
+from keras.layers import Dense, LeakyReLU, BatchNormalization, Activation
+from keras.optimizers import Adam, SGD
 from keras.initializers import glorot_normal
 from keras.callbacks import EarlyStopping
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
+# Tensorboard, open tensorboard server: !tensor_board --logdir=logs/
+from time import time
+from tensorflow.python.keras.callbacks import TensorBoard
+
 from trackers import generate_tracking_data
 import visualise as vis
+
+
+def check_trained_bounds(X, bounds_X):
+    for i in range(4):
+        if ((np.sum(bounds_X[0, i] > X[i]) > 0) or
+                np.sum(bounds_X[1, i] < X[i]) > 0):
+            return False
+    return True
+
 
 # (0) CONFIG.
 tracker = 'nonlinear'
 
-generate_training_set = True
-n_particles_train = 60000
-# Misleading name: size of training dataset, only 1 turn used for training
+generate_training_set = False
+n_particles_train = 100000
 i_turn_train = 0
-f_turn_train = 20
+f_turn_train = 1
 n_turns_train = f_turn_train - i_turn_train
+
+# "Beam sizes" for training
+x_size = 1e-3
+xp_size = x_size/10.
+y_size = 1e-3
+yp_size = y_size/10.
 
 visualise_training_data = False
 
 # NN configuration
-n_nodes_NN = 60
+n_nodes_NN = 500
 visualise_NN_training = True
 
-generate_test_set_1turn = True
-generate_test_set_multiturn = True
-n_particles_test_1turn = 100
+generate_test_set_1turn = False
+generate_test_set_multiturn = False
+n_particles_test_1turn = 500
 n_particles_test_multiturn = 1000
-n_turns_test_multiturn = 100
+n_turns_test_multiturn = 60
 visualise_test_results = True
 
 # (1) GENERATE TRAINING DATA USING EITHER LIN. TRACKER OR PYSIXTRACKLIB
 # Note that part of training set will be used as validation set during
 # training.
-# TODO: is Gaussian the best choice for training data?
-#  (maybe for NN weights?)
 
 # TODO: Linear tracking needs fixing ...
 if tracker not in ['linear', 'nonlinear']:
@@ -57,7 +73,7 @@ if generate_training_set:
     training_data = generate_tracking_data(
         tracker=tracker, n_particles=n_particles_train,
         n_turns=n_turns_train, filename=filename,
-        distribution='Uniform')
+        distribution='Uniform', xsize=x_size, ysize=y_size)
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     training_data = hdf_file['data']
@@ -72,7 +88,7 @@ else:
 train_X = pd.DataFrame()
 train_y = pd.DataFrame()
 
-cols = cm.Accent(np.linspace(0, 1, f_turn_train-i_turn_train))
+cols = cm.Accent(np.linspace(0, 1, n_turns_train))
 for i in range(i_turn_train, f_turn_train):
     train_X_tmp = (training_data.loc[training_data['turn'] == i]
                    .sort_values('particle_id')
@@ -100,7 +116,7 @@ for i in range(i_turn_train, f_turn_train):
 
 # (2b) Standardise input and target (important step). If e.g. output
 # not standardised, NN does not train well.
-# TODO: Input from Elena Fol: try to initialise weights in correct range
+# TODO: Input from E. Fol: try to initialise weights in correct range
 #  this should also solve the problem (instead of standardising output)
 scaler_in = StandardScaler()
 train_X = pd.DataFrame(
@@ -110,13 +126,18 @@ scaler_out = StandardScaler()
 train_y = pd.DataFrame(
     data=scaler_out.fit_transform(train_y), columns=train_y.columns)
 
+# Beam sizes of training set
+bounds_X = np.array([[-x_size, -xp_size, -y_size, -yp_size],
+                     [x_size, xp_size, y_size, yp_size]])
+bounds_X = scaler_in.transform(bounds_X)
+
 if visualise_training_data:
     # Training data after scaling
     fig1 = plt.figure(1, figsize=(12, 6))
     plt.suptitle("Training data\n(after scaling)", fontsize=18)
     vis.input_vs_output_data(
         train_X, train_y, fig=fig1, xlims=(-5, 5), ylims=(-5, 5),
-        units=False)
+        units=False, bounds_X=bounds_X)
 
 # (3) BUILD MODEL: use Sequential network type
 # (sequential is the simplest way to build model in Keras:
@@ -128,27 +149,36 @@ NN_tracker = Sequential()
 # (e.g. relu, tanh (hyperbolic tangent activation)
 # tanh -> does not work as well as relu)
 n_input_nodes = train_X.shape[1]
-leaky_relu = LeakyReLU(alpha=0.2)
 NN_tracker.add(
     Dense(n_nodes_NN,
-          activation=leaky_relu,
           input_shape=(n_input_nodes,),
           kernel_initializer=glorot_normal(seed=0)))
+NN_tracker.add(LeakyReLU(alpha=0.3))
 
-# NN_tracker.add(Dense(30, activation=leaky_relu,
+
+# NN_tracker.add(Dense(200,
+#                      activation=leaky_relu,
+#                      kernel_initializer=glorot_normal(seed=1)))
+
+# Add hidden layer with batch norm.
+# NN_tracker.add(Dense(20,
+#                      activation=leaky_relu,
 #                      kernel_initializer=glorot_normal(seed=0)))
+# NN_tracker.add(BatchNormalization())
+# NN_tracker.add(Activation(leaky_relu))
 
 # Output layer
 n_output_nodes = train_y.shape[1]
 NN_tracker.add(
-    Dense(n_output_nodes, kernel_initializer=glorot_normal(seed=0)))
+    Dense(n_output_nodes, kernel_initializer=glorot_normal(seed=2)))
 
 # (4) COMPILE MODEL
 # Choose optimiser and loss function
 # lr=1e-3 is default
-adam_opt = Adam(lr=5e-5, beta_1=0.9, beta_2=0.999, epsilon=None,
-                decay=1e-5,
-                amsgrad=False)
+# lr=1e-5 is a good choice, although rather slow
+adam_opt = Adam(lr=1e-5)  #, beta_1=0.9, beta_2=0.999, epsilon=None,
+                #  amsgrad=False)  # , decay=1e-6)
+sgd_opt = SGD(lr=0.2, decay=1e-8, momentum=0.9, nesterov=True)
 NN_tracker.compile(optimizer=adam_opt, loss='mean_squared_error',
                    metrics=['acc'])
 
@@ -159,9 +189,16 @@ NN_tracker.compile(optimizer=adam_opt, loss='mean_squared_error',
 # stop if model performance on validation 'does not change'
 # for 5 epochs in a row)
 early_stopping_monitor = EarlyStopping(patience=30)
+tensor_board = TensorBoard(log_dir="logs/{}".format(time()))
+
+# training_history = NN_tracker.fit(
+#     train_X, train_y, validation_split=0.2, epochs=800,
+#     callbacks=[early_stopping_monitor, tensor_board],
+#     batch_size=256)
 training_history = NN_tracker.fit(
-    train_X, train_y, validation_split=0.2, epochs=800,
-    callbacks=[early_stopping_monitor], batch_size=256)
+    train_X, train_y, validation_split=0.2, epochs=10,
+    # callbacks=[early_stopping_monitor, tensor_board],
+    batch_size=100)
 
 # (5b) Visualise training evolution
 if visualise_NN_training:
@@ -169,9 +206,9 @@ if visualise_NN_training:
     fig2 = plt.figure(2, figsize=(9, 6))
     plt.suptitle('NN training evolution', fontsize=18)
     vis.training_evolution_NN(training_history, fig=fig2)
+    # plt.savefig('tmp_training_evolution_zoom.pdf')
 
 
-"""
 # (6) TEST SET: MAKE PREDICTIONS WITH THE MODEL
 # Create new data with *same* 'machine': try to track one turn with NN
 # and compare to full tracking output
@@ -215,12 +252,19 @@ prediction_NN = pd.DataFrame(
 # test_X = pd.DataFrame(
 #     data=scaler_in.inverse_transform(test_X), columns=test_X.columns)
 
+
 if visualise_test_results:
     # Visualise results
     fig3 = plt.figure(3, figsize=(12, 6))
     plt.suptitle('Phase space after 1 turn\n(full tracking vs. NN)',
                  fontsize=18)
     vis.test_data_phase_space(prediction_NN, test_y, fig=fig3)
+
+    fig30 = plt.figure(30, figsize=(12, 6))
+    plt.suptitle('Phase space after {:d} turns\n(full tracking vs. NN)',
+                 fontsize=18)
+    vis.test_data_phase_space(test_X, test_X, fig=fig30, bounds_X=bounds_X)
+
 
     # Particle-by-particle overlays
     fig4 = plt.figure(4, figsize=(15, 6))
@@ -236,17 +280,35 @@ if visualise_test_results:
     vis.test_data_difference(difference, fig=fig5)
 
 
+# Centering of training data (to correct for prediction bias)
+prediction_bias_correction = StandardScaler(with_std=False)
+difference = pd.DataFrame(
+    data=prediction_bias_correction.fit_transform(difference),
+    columns=difference.columns)
+
+fig51 = plt.figure(51, figsize=(9, 6))
+plt.suptitle('Particle-by-particle differences after 1 turn\n' +
+             '(full tracking vs. NN)', fontsize=18)
+vis.test_data_difference(difference, fig=fig51)
+
+
 # (6b) Test for multi-turn tracking
 filename = '{:s}_test_dataset_multiturn.h5'.format(tracker)
 if generate_test_set_multiturn:
     # Generate new training data set and overwrite existing h5 file
     test_data_multiturn = generate_tracking_data(
         tracker=tracker, n_particles=n_particles_test_multiturn,
-        n_turns=n_turns_test_multiturn, filename=filename, xsize=5e-7,
-        ysize=5e-7)
+        n_turns=n_turns_test_multiturn, filename=filename, xsize=1e-5,
+        ysize=1e-5)
 else:
     hdf_file = pd.HDFStore(filename, mode='r')
     test_data_multiturn = hdf_file['data']
+
+# Check if all particles remain within safe bounds (trained zone)
+test_X = test_data_multiturn.drop(columns=['particle_id', 'turn'])
+test_X = scaler_in.transform(test_X)
+if not check_trained_bounds(test_X, bounds_X):
+    print('WARNING: some particles have left the safe zone.')
 
 
 # Show phase space after n_multiturn_phase_space turns
@@ -268,6 +330,7 @@ for i in range(n_multiturn_phase_space):
     prediction_NN = scaler_in.transform(prediction_NN)
     prediction_NN = NN_tracker.predict(prediction_NN)
     prediction_NN = scaler_out.inverse_transform(prediction_NN)
+    prediction_NN = prediction_bias_correction.transform(prediction_NN)
 
 prediction_NN = pd.DataFrame(data=prediction_NN, columns=test_X.columns)
 
@@ -277,10 +340,7 @@ plt.suptitle('Phase space after {:d} turns\n(full tracking vs. NN)'
              .format(n_multiturn_phase_space), fontsize=18)
 vis.test_data_phase_space(prediction_NN, test_y, fig=fig33)
 
-"""
 
-
-"""
 # From test_data_multi-turn extract turn-by-turn centroid. This will be
 # the ground truth
 test_X = (test_data_multiturn.loc[test_data_multiturn['turn'] == 0]
@@ -301,6 +361,8 @@ for i in range(n_turns_test_multiturn):
     prediction_NN = scaler_in.transform(prediction_NN)
     prediction_NN = NN_tracker.predict(prediction_NN)
     prediction_NN = scaler_out.inverse_transform(prediction_NN)
+    prediction_NN = prediction_bias_correction.transform(prediction_NN)
+
 prediction_NN_centroid = pd.DataFrame(
     data={'x': prediction_NN_centroid[:, 0],
           'xp': prediction_NN_centroid[:, 1],
@@ -322,4 +384,4 @@ if visualise_test_results:
     plt.suptitle('Centroid differences for multi-turn tracking\n' +
                  '(full tracking vs. NN)', fontsize=18)
     vis.test_data_difference(difference, fig=fig8)
-"""
+
